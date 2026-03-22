@@ -4,7 +4,9 @@ A computer vision project designed for visually impaired individuals. It uses th
 
 ## Features
 - Real-time Object Detection with YOLOv8.
-- Non-blocking Text-to-Speech (TTS) using threaded voice announcements.
+- Spatial Awareness: Identifies if the object is on the left, right, or center.
+- Distance Estimation: Approximates if the object is very close, nearby, or in the distance based on bounding box height.
+- Non-blocking Text-to-Speech (TTS) using threaded voice announcements, which naturally format distance and position (e.g. "nearby person on the left").
 - Smart cooldowns to prevent repetitive speech alerts for the same objects.
 
 ## Requirements

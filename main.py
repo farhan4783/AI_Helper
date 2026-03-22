@@ -43,26 +43,39 @@ class VoiceAssistant:
             finally:
                 self.message_queue.task_done()
 
-    def announce_objects(self, detected_classes):
-        """Queues objects for announcement if they haven't been spoken recently."""
+    def announce_objects(self, detected_objects):
+        """Queues objects for announcement considering distance and position."""
         
         current_time = time.time()
         
-        # Filter classes based on cooldown
         to_speak = []
-        for obj in set(detected_classes):
-            if current_time - self.last_spoken[obj] > self.cooldown:
-                to_speak.append(obj)
-                self.last_spoken[obj] = current_time
+        spoken_this_frame = set()
+        
+        # Sort objects by area (largest/closest first)
+        sorted_objs = sorted(detected_objects, key=lambda x: x['area'], reverse=True)
+        
+        for obj in sorted_objs:
+            cls_name = obj["class"]
+            
+            # Use class name for cooldown tracking
+            if current_time - self.last_spoken[cls_name] > self.cooldown:
+                if cls_name not in spoken_this_frame:
+                    to_speak.append(obj)
+                    self.last_spoken[cls_name] = current_time
+                    spoken_this_frame.add(cls_name)
                 
         if to_speak:
             # Format text naturally
-            if len(to_speak) == 1:
-                text = f"{to_speak[0]} ahead."
-            elif len(to_speak) == 2:
-                text = f"{to_speak[0]} and {to_speak[1]} ahead."
+            sentences = []
+            for obj in to_speak:
+                sentences.append(f"{obj['class']} {obj['position']}")
+                
+            if len(sentences) == 1:
+                text = sentences[0] + "."
+            elif len(sentences) == 2:
+                text = sentences[0] + " and " + sentences[1] + "."
             else:
-                text = ", ".join(to_speak[:-1]) + f", and {to_speak[-1]} ahead."
+                text = ", ".join(sentences[:-1]) + ", and " + sentences[-1] + "."
                 
             print(f"Speaking: {text}")
             
@@ -117,6 +130,7 @@ def main():
             results = model(frame, stream=True, verbose=False)
 
             detected_objects = []
+            frame_height, frame_width = frame.shape[:2]
             
             # Parse results
             for result in results:
@@ -134,13 +148,40 @@ def main():
                     # Only consider objects with decent confidence (e.g., above 60%)
                     if conf > 0.6:
                         class_name = model.names[cls_id]
-                        detected_objects.append(class_name)
+                        
+                        # Calculate position
+                        x_center = (x1 + x2) / 2
+                        width_frac = x_center / frame_width
+                        if width_frac < 0.33:
+                            h_pos = "on the left"
+                        elif width_frac > 0.66:
+                            h_pos = "on the right"
+                        else:
+                            h_pos = "in front"
+                            
+                        # Calculate distance
+                        height_frac = (y2 - y1) / frame_height
+                        if height_frac > 0.6:
+                            dist = "very close"
+                        elif height_frac > 0.3:
+                            dist = "nearby"
+                        else:
+                            dist = "in the distance"
+                            
+                        position_text = f"{dist} {h_pos}"
+                        area = (x2 - x1) * (y2 - y1)
+                        
+                        detected_objects.append({
+                            "class": class_name,
+                            "position": position_text,
+                            "area": area
+                        })
                         
                         # Draw bounding box on frame
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         
                         # Note confidence and class name above bounding box
-                        label = f"{class_name} {conf:.2f}"
+                        label = f"{class_name} {conf:.2f} | {dist}"
                         cv2.putText(frame, label, (x1, max(y1-10, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             # Trigger voice announcement
